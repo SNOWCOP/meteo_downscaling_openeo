@@ -7,7 +7,7 @@ import xarray
 
 def test_run():
 
-    from snowcop.downscaling.run_agera_downscaler import run
+    from meteo_downscaling_openeo.run_agera_downscaler import run
     run(spatial_extent)
 
 @pytest.fixture
@@ -16,9 +16,9 @@ def openeoplatform_connection() -> openeo.Connection:
 
 spatial_extent = {
         "south": 5816500,
-        "north": 5816500 + 1024*30,
+        "north": 5816500 + 128*30,
         "west": 271000,
-        "east": 271000 + 1024*30,
+        "east": 271000 + 128*30,
         "crs": "EPSG:32719"
 }
 

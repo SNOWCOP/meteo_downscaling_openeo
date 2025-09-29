@@ -32,32 +32,33 @@ def downscale_t_dewpoint(cube: ProcessBuilder, lapse_rate, temp_index="temperatu
     """
 
     temperature_downscaled = cube[temp_index] - lapse_rate * (cube[dem_index] - 0)
-    rh = downscale_relative_humidity(cube, lapse_rate)
+    rh =  relative_humidity_formula(temperature_downscaled - 273.15, cube["dewpoint-temperature"], cube[dem_index], 2)
     return array_create([temperature_downscaled, rh])
 
-def downscale_relative_humidity(t_d_dem: ProcessBuilder, lapse_rate, month_index = 2):
-
-    #TODO select vp_coeff based on hemisphere
+def relative_humidity_formula( temperature_downscaled, dewpoint_temperature_coarse, elevation, month_index):
+    # TODO select vp_coeff based on hemisphere
     vp_coeff_all = vp_coeff_sohem
     vp_coeff = vp_coeff_all[month_index]
     d_t_lapse_rate = vp_coeff * c / b
 
-    dem = t_d_dem["elevation"]
-    T_down = t_d_dem["temp"] -lapse_rate * (dem - 0) - 273.15
-    D_down = t_d_dem["dew"] - d_t_lapse_rate * (dem - 0) - 273.15
-    es = a * exp((b * T_down) / (T_down + c))
+
+    D_down = dewpoint_temperature_coarse - d_t_lapse_rate * (elevation - 0) - 273.15
+    es = a * exp((b * temperature_downscaled) / (temperature_downscaled + c))
     e = a * exp((b * D_down) / (D_down + c))
     return clip(100 * e / es, 0, 100)
+
+
 
 def downscale_temperature_humidity(agera_cube, elevation_cube, geopotential_cube):
     lapse_rate_nohem = np.array([4.4, 5.9, 7.1, 7.8, 8.1, 8.2, 8.1, 8.1, 7.7, 6.8, 5.5, 4.7]) / 1000.0
     lapse_rate_sohem = np.array([8.1, 8.1, 7.7, 6.8, 5.5, 4.7, 4.4, 5.9, 7.1, 7.8, 8.1, 8.2]) / 1000.0
     lapse_rate = lapse_rate_sohem[1]
 
-    t0_cube = agera_cube.merge_cubes(geopotential_cube).apply_dimension(dimension="bands", process=lambda x: preprocess_low_resolution_agera(x, lapse_rate, temp_index=0,dewpoint_index=1, temp_scale= 0.01))
+    t0_cube = agera_cube.merge_cubes(geopotential_cube).apply_dimension(dimension="bands", process=lambda x: preprocess_low_resolution_agera(x, lapse_rate, temp_index=0,dewpoint_index=1, temp_scale= 0.01))\
+        .rename_labels(target=["t0","dewpoint-temperature"], dimension="bands")
     downscale_inputs = t0_cube.resample_cube_spatial(elevation_cube,method="bilinear").merge_cubes(elevation_cube.max_time())
 
-    return downscale_inputs.reduce_dimension(dimension="bands", reducer=lambda x: downscale_t_dewpoint(x, lapse_rate, temp_index=0, dem_index=1))
+    return downscale_inputs.reduce_dimension(dimension="bands", reducer=lambda x: downscale_t_dewpoint(x, lapse_rate, temp_index="t0", dem_index="DEM"))
 
 
 
