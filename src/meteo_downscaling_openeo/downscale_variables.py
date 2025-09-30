@@ -1,4 +1,6 @@
-from openeo import DataCube, UDF
+import importlib.resources
+
+from openeo import DataCube, UDF, MultiResult
 from openeo.processes import ProcessBuilder, array_create, exp, clip
 import numpy as np
 
@@ -18,7 +20,7 @@ def preprocess_low_resolution_agera(cube: ProcessBuilder, lapse_rate, temp_index
     t_0 = t_raw - lapse_rate * (0 - geopotential)
 
     if (dewpoint_index is not None):
-        d_0 = cube[dewpoint_index] - lapse_rate * (0 - geopotential)
+        d_0 = cube[dewpoint_index] *0.01 - lapse_rate * (0 - geopotential)
         return array_create([t_0, d_0])
     else:
         return t_0
@@ -54,13 +56,20 @@ def downscale_temperature_humidity(agera_cube, elevation_cube, geopotential_cube
     lapse_rate_sohem = np.array([8.1, 8.1, 7.7, 6.8, 5.5, 4.7, 4.4, 5.9, 7.1, 7.8, 8.1, 8.2]) / 1000.0
     lapse_rate = lapse_rate_sohem[1]
 
-    t0_cube = agera_cube.merge_cubes(geopotential_cube).apply_dimension(dimension="bands", process=lambda x: preprocess_low_resolution_agera(x, lapse_rate, temp_index=0,dewpoint_index=1, temp_scale= 0.01))\
+    t0_cube = agera_cube.merge_cubes(geopotential_cube).apply_dimension(dimension="bands", process=lambda x: preprocess_low_resolution_agera(x, lapse_rate, temp_index="temperature-mean",dewpoint_index=1, temp_scale= 0.01))\
         .rename_labels(target=["t0","dewpoint-temperature"], dimension="bands")
     downscale_inputs = t0_cube.resample_cube_spatial(elevation_cube,method="bilinear").merge_cubes(elevation_cube.max_time())
 
-    return downscale_inputs.reduce_dimension(dimension="bands", reducer=lambda x: downscale_t_dewpoint(x, lapse_rate, temp_index="t0", dem_index="DEM"))
+    downscaled =  downscale_inputs.reduce_dimension(dimension="bands", reducer=lambda x: downscale_t_dewpoint(x, lapse_rate, temp_index="t0", dem_index="DEM"))
+    return MultiResult([
+        downscaled.save_result("netCDF", dict(filename_prefix="downscaled_"))
+        #t0_cube.save_result("GTIFF", dict(filename_prefix="t0_"))
+        #downscale_inputs.save_result("netCDF", dict(filename_prefix="downscale_inputs_"))
+    ])
 
 
+def get_udf(name):
+    return UDF( code= importlib.resources.read_text('meteo_downscaling_openeo', name), runtime="Python", version="3.11")
 
 
 def downscale_shortwave_radiation(agera: DataCube, slope_aspect:DataCube):
@@ -71,13 +80,15 @@ def downscale_shortwave_radiation(agera: DataCube, slope_aspect:DataCube):
     requires computation of solar incidence angle
     """
 
-    compute_solarposition = UDF.from_file("solar_position_udf.py")
+
+
+    compute_solarposition = get_udf('solar_position_udf.py')
 
     agera_with_sunpos = agera.apply_dimension(dimension="bands", process=compute_solarposition)
 
     return agera_with_sunpos
 
-    compute_incidence = UDF.from_file("incidence_angle_udf.py")
+    compute_incidence = get_udf("incidence_angle_udf.py")
 
     radiation_with_incidence = (agera_with_sunpos.resample_cube_spatial(slope_aspect).merge_cubes(slope_aspect)
      .apply_dimension(dimension="bands", process=compute_incidence))
