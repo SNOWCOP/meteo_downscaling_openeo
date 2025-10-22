@@ -78,7 +78,7 @@ def test_local_run(local_agera, local_dem):
 
     agera = local_conn.load_collection(str(local_agera))
     dem = local_conn.load_collection(str(local_dem))
-    from snowcop.downscaling.downscale_variables import downscale_temperature_humidity
+    from meteo_downscaling_openeo.downscale_variables import downscale_temperature_humidity
     downscale_temperature_humidity(agera, dem, None).execute()
 
 def test_local_shortwave_radiation(local_shortwave_radiation_job):
@@ -87,7 +87,7 @@ def test_local_shortwave_radiation(local_shortwave_radiation_job):
 
     agera = local_conn.load_collection(str(local_shortwave_radiation_job))
 
-    from snowcop.downscaling.downscale_variables import downscale_shortwave_radiation
+    from meteo_downscaling_openeo.downscale_variables import downscale_shortwave_radiation
     downscale_shortwave_radiation(agera,  None).execute()
 
 @pytest.fixture
@@ -108,5 +108,5 @@ def test_localservice_shortwave_radiation():
 
     agera = local_conn.load_stac("https://openeo-dev.vito.be/openeo/1.2/jobs/j-25091807142441ddbd47f78a41d1656e/results/ZGZhNjc4Y2I5YWIxN2Y2NWQ0ZjAyNWUzMGZhYzVlMGQ5MDExNjE3NmU0NGZkMTdkNzAzNDE5MzIyNzQ3Y2JiZEBlZ2kuZXU=/c6cc84e74bfddbf296d72a782970b229?expires=1758784773")
 
-    from snowcop.downscaling.downscale_variables import downscale_shortwave_radiation
+    from meteo_downscaling_openeo.downscale_variables import downscale_shortwave_radiation
     downscale_shortwave_radiation(agera,  None).download("local_result.nc")
