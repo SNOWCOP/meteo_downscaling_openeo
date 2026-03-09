@@ -1,0 +1,686 @@
+{
+  "process_graph": {
+    "loadcollection1": {
+      "process_id": "load_collection",
+      "arguments": {
+        "bands": [
+          "temperature-mean",
+          "dewpoint-temperature",
+          "solar-radiation-flux"
+        ],
+        "featureflags": {
+          "tilesize": 1
+        },
+        "id": "AGERA5",
+        "spatial_extent": {
+          "from_parameter": "spatial_extent"
+        },
+        "temporal_extent": [
+          "2024-07-01",
+          "2024-07-05"
+        ]
+      }
+    },
+    "loadstac1": {
+      "process_id": "load_stac",
+      "arguments": {
+        "bands": [
+          "geopotential"
+        ],
+        "featureflags": {
+          "tilesize": 1
+        },
+        "spatial_extent": {
+          "from_parameter": "spatial_extent"
+        },
+        "url": "https://artifactory.vgt.vito.be/artifactory/auxdata-public/geopotential.json"
+      }
+    },
+    "reducedimension1": {
+      "process_id": "reduce_dimension",
+      "arguments": {
+        "data": {
+          "from_node": "loadstac1"
+        },
+        "dimension": "t",
+        "reducer": {
+          "process_graph": {
+            "max1": {
+              "process_id": "max",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                }
+              },
+              "result": true
+            }
+          }
+        }
+      }
+    },
+    "mergecubes1": {
+      "process_id": "merge_cubes",
+      "arguments": {
+        "cube1": {
+          "from_node": "loadcollection1"
+        },
+        "cube2": {
+          "from_node": "reducedimension1"
+        }
+      }
+    },
+    "applydimension1": {
+      "process_id": "apply_dimension",
+      "arguments": {
+        "data": {
+          "from_node": "mergecubes1"
+        },
+        "dimension": "bands",
+        "process": {
+          "process_graph": {
+            "arrayelement1": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "temperature-mean"
+              }
+            },
+            "multiply1": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement1"
+                },
+                "y": 0.01
+              }
+            },
+            "arrayelement2": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "geopotential"
+              }
+            },
+            "divide1": {
+              "process_id": "divide",
+              "arguments": {
+                "x": 35885.0,
+                "y": {
+                  "from_node": "arrayelement2"
+                }
+              }
+            },
+            "subtract1": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": 0,
+                "y": {
+                  "from_node": "divide1"
+                }
+              }
+            },
+            "multiply2": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": 0.0081,
+                "y": {
+                  "from_node": "subtract1"
+                }
+              }
+            },
+            "subtract2": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": {
+                  "from_node": "multiply1"
+                },
+                "y": {
+                  "from_node": "multiply2"
+                }
+              }
+            },
+            "arrayelement3": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "index": 1
+              }
+            },
+            "multiply3": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement3"
+                },
+                "y": 0.01
+              }
+            },
+            "subtract3": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": 0,
+                "y": {
+                  "from_node": "divide1"
+                }
+              }
+            },
+            "multiply4": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": 0.0081,
+                "y": {
+                  "from_node": "subtract3"
+                }
+              }
+            },
+            "subtract4": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": {
+                  "from_node": "multiply3"
+                },
+                "y": {
+                  "from_node": "multiply4"
+                }
+              }
+            },
+            "arraycreate1": {
+              "process_id": "array_create",
+              "arguments": {
+                "data": [
+                  {
+                    "from_node": "subtract2"
+                  },
+                  {
+                    "from_node": "subtract4"
+                  }
+                ]
+              },
+              "result": true
+            }
+          }
+        }
+      }
+    },
+    "renamelabels1": {
+      "process_id": "rename_labels",
+      "arguments": {
+        "data": {
+          "from_node": "applydimension1"
+        },
+        "dimension": "bands",
+        "target": [
+          "t0",
+          "dewpoint-temperature"
+        ]
+      }
+    },
+    "loadcollection2": {
+      "process_id": "load_collection",
+      "arguments": {
+        "id": "COPERNICUS_30",
+        "spatial_extent": {
+          "from_parameter": "spatial_extent"
+        },
+        "temporal_extent": null
+      }
+    },
+    "resamplecubespatial1": {
+      "process_id": "resample_cube_spatial",
+      "arguments": {
+        "data": {
+          "from_node": "renamelabels1"
+        },
+        "method": "bilinear",
+        "target": {
+          "from_node": "loadcollection2"
+        }
+      }
+    },
+    "reducedimension2": {
+      "process_id": "reduce_dimension",
+      "arguments": {
+        "data": {
+          "from_node": "loadcollection2"
+        },
+        "dimension": "t",
+        "reducer": {
+          "process_graph": {
+            "max2": {
+              "process_id": "max",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                }
+              },
+              "result": true
+            }
+          }
+        }
+      }
+    },
+    "mergecubes2": {
+      "process_id": "merge_cubes",
+      "arguments": {
+        "cube1": {
+          "from_node": "resamplecubespatial1"
+        },
+        "cube2": {
+          "from_node": "reducedimension2"
+        }
+      }
+    },
+    "reducedimension3": {
+      "process_id": "reduce_dimension",
+      "arguments": {
+        "data": {
+          "from_node": "mergecubes2"
+        },
+        "dimension": "bands",
+        "reducer": {
+          "process_graph": {
+            "arrayelement4": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "t0"
+              }
+            },
+            "arrayelement5": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "DEM"
+              }
+            },
+            "subtract5": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement5"
+                },
+                "y": 0
+              }
+            },
+            "multiply5": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": 0.0081,
+                "y": {
+                  "from_node": "subtract5"
+                }
+              }
+            },
+            "subtract6": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement4"
+                },
+                "y": {
+                  "from_node": "multiply5"
+                }
+              }
+            },
+            "arrayelement6": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "dewpoint-temperature"
+              }
+            },
+            "arrayelement7": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "DEM"
+              }
+            },
+            "subtract7": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement7"
+                },
+                "y": 0
+              }
+            },
+            "multiply6": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": 0.004543486458690436,
+                "y": {
+                  "from_node": "subtract7"
+                }
+              }
+            },
+            "subtract8": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement6"
+                },
+                "y": {
+                  "from_node": "multiply6"
+                }
+              }
+            },
+            "subtract9": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": {
+                  "from_node": "subtract8"
+                },
+                "y": 273.15
+              }
+            },
+            "multiply7": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": 17.502,
+                "y": {
+                  "from_node": "subtract9"
+                }
+              }
+            },
+            "add1": {
+              "process_id": "add",
+              "arguments": {
+                "x": {
+                  "from_node": "subtract9"
+                },
+                "y": 240.97
+              }
+            },
+            "divide2": {
+              "process_id": "divide",
+              "arguments": {
+                "x": {
+                  "from_node": "multiply7"
+                },
+                "y": {
+                  "from_node": "add1"
+                }
+              }
+            },
+            "exp1": {
+              "process_id": "exp",
+              "arguments": {
+                "p": {
+                  "from_node": "divide2"
+                }
+              }
+            },
+            "multiply8": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": 611.21,
+                "y": {
+                  "from_node": "exp1"
+                }
+              }
+            },
+            "multiply9": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": 100,
+                "y": {
+                  "from_node": "multiply8"
+                }
+              }
+            },
+            "subtract10": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": {
+                  "from_node": "subtract6"
+                },
+                "y": 273.15
+              }
+            },
+            "multiply10": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": 17.502,
+                "y": {
+                  "from_node": "subtract10"
+                }
+              }
+            },
+            "add2": {
+              "process_id": "add",
+              "arguments": {
+                "x": {
+                  "from_node": "subtract10"
+                },
+                "y": 240.97
+              }
+            },
+            "divide3": {
+              "process_id": "divide",
+              "arguments": {
+                "x": {
+                  "from_node": "multiply10"
+                },
+                "y": {
+                  "from_node": "add2"
+                }
+              }
+            },
+            "exp2": {
+              "process_id": "exp",
+              "arguments": {
+                "p": {
+                  "from_node": "divide3"
+                }
+              }
+            },
+            "multiply11": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": 611.21,
+                "y": {
+                  "from_node": "exp2"
+                }
+              }
+            },
+            "divide4": {
+              "process_id": "divide",
+              "arguments": {
+                "x": {
+                  "from_node": "multiply9"
+                },
+                "y": {
+                  "from_node": "multiply11"
+                }
+              }
+            },
+            "clip1": {
+              "process_id": "clip",
+              "arguments": {
+                "max": 100,
+                "min": 0,
+                "x": {
+                  "from_node": "divide4"
+                }
+              }
+            },
+            "arraycreate2": {
+              "process_id": "array_create",
+              "arguments": {
+                "data": [
+                  {
+                    "from_node": "subtract6"
+                  },
+                  {
+                    "from_node": "clip1"
+                  }
+                ]
+              },
+              "result": true
+            }
+          }
+        }
+      }
+    },
+    "applydimension2": {
+      "process_id": "apply_dimension",
+      "arguments": {
+        "data": {
+          "from_node": "loadcollection1"
+        },
+        "dimension": "bands",
+        "process": {
+          "process_graph": {
+            "runudf1": {
+              "process_id": "run_udf",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "runtime": "Python",
+                "udf": "# /// script\n# dependencies = [\n#   \"pvlib\"\n# ]\n# ///\nimport xarray\nimport pandas as pd\nimport datetime\n\nimport numpy as np\nfrom openeo.udf import inspect\n\n\ndef apply_datacube(cube: xarray.DataArray, context) -> xarray.DataArray:\n    assert len(cube.shape) == 3\n    assert \"t\" in cube.attrs, \"UDF requires 't' attribute with timestamp, as provided by Geotrellis backend.\"\n    assert isinstance(cube.attrs[\"t\"], datetime.datetime ), f\"time has to be provided as datetime, but got: {cube.attrs['t']}\"\n    inspect(data=cube.dims, message = f\"dims {cube.dims}\")\n    new_shape = list(cube.shape)\n    new_shape[cube.dims.index(\"bands\")] = 2\n    new_shape = tuple(new_shape)\n    inspect(data=new_shape, message=f\"shape {new_shape}\")\n\n\n    longitude = cube.coords[\"x\"].mean().item()\n    latitude = cube.coords[\"y\"].mean().item()\n    inspect(data=longitude, message=f\"longitude {longitude}\")\n\n    chunk_timestamp: datetime.datetime = cube.attrs[\"t\"]\n\n    inspect(data=chunk_timestamp, message=f\"date {chunk_timestamp}\")\n\n    print(f\"SOME LOGGING FROM PRINT!!! {cube}\")\n    #import pvlib\n    #location = pvlib.location.Location(latitude, longitude)\n    #inspect(data=location, message=f\"location {location}\")\n    midnight = datetime.datetime.fromordinal(chunk_timestamp.date().toordinal()).replace(tzinfo=datetime.timezone.utc)\n\n    solar_noon_utc = midnight + pd.Timedelta(hours=12)# - location.longitude / 15)\n\n    assert solar_noon_utc.tzinfo is not None, \"The datetime object has no timezone information.\"\n    assert solar_noon_utc.tzinfo == datetime.timezone.utc, \"The datetime object is not in UTC timezone.\"\n\n\n    # Get solar position at estimated solar noon\n    solpos = dict(zenith=45, azimuth=60)#location.get_solarposition(solar_noon_utc)\n\n    # Extract solar angles\n    zenith = 0.4#np.radians(solpos['zenith'].values[0])  # radians\n    azimuth = 0.5 #np.radians(solpos['azimuth'].values[0])  # radians\n\n    full_array = np.full(new_shape, zenith)\n    full_array[1,:,:] = azimuth\n\n    # New data to add\n    new_data = xarray.DataArray(\n        full_array,  # Shape: (1, x, y)\n        dims=[\"bands\", \"x\", \"y\"],\n        coords={\"bands\": [\"zenith\", \"azimuth\"]}\n    )\n\n    # Concatenate along the band dimension\n    return xarray.concat([cube, new_data], dim=\"bands\")\n\n",
+                "version": "3.11"
+              },
+              "result": true
+            }
+          }
+        }
+      }
+    },
+    "mergecubes3": {
+      "process_id": "merge_cubes",
+      "arguments": {
+        "cube1": {
+          "from_node": "reducedimension3"
+        },
+        "cube2": {
+          "from_node": "applydimension2"
+        }
+      },
+      "result": true
+    }
+  },
+  "id": "agera_meteo_mountain_downscaling",
+  "summary": "Computes meteo variables (temperature, humidity, shortwave radiation) downscaled to mountain areas based on AGERA5 and DEM data.",
+  "description": "Computes meteo variables (temperature, humidity, shortwave radiation) downscaled to mountain areas based on AGERA5 and DEM data. A simply physical model is used. Ported from original: [https://github.com/bare92/micropyzzotmet/](micropyzzotmet)",
+  "returns": {
+    "description": "A data cube with the newly computed values.\n\nAll dimensions stay the same, except for the dimensions specified in corresponding parameters. There are three cases how the dimensions can change:\n\n1. The source dimension is the target dimension:\n   - The (number of) dimensions remain unchanged as the source dimension is the target dimension.\n   - The source dimension properties name and type remain unchanged.\n   - The dimension labels, the reference system and the resolution are preserved only if the number of values in the source dimension is equal to the number of values computed by the process. Otherwise, all other dimension properties change as defined in the list below.\n2. The source dimension is not the target dimension. The target dimension exists with a single label only:\n   - The number of dimensions decreases by one as the source dimension is 'dropped' and the target dimension is filled with the processed data that originates from the source dimension.\n   - The target dimension properties name and type remain unchanged. All other dimension properties change as defined in the list below.\n3. The source dimension is not the target dimension and the latter does not exist:\n   - The number of dimensions remain unchanged, but the source dimension is replaced with the target dimension.\n   - The target dimension has the specified name and the type other. All other dimension properties are set as defined in the list below.\n\nUnless otherwise stated above, for the given (target) dimension the following applies:\n\n- the number of dimension labels is equal to the number of values computed by the process,\n- the dimension labels are incrementing integers starting from zero,\n- the resolution changes, and\n- the reference system is undefined.",
+    "schema": {
+      "type": "object",
+      "subtype": "datacube"
+    }
+  },
+  "categories": [
+    "meteo"
+  ],
+  "links": [
+    {
+      "rel": "about",
+      "href": "https://github.com/bare92/micropyzzotmet/](micropyzzotmet"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "spatial_extent",
+      "description": "Limits the data to process to the specified bounding box or polygons.\n\nFor raster data, the process loads the pixel into the data cube if the point\nat the pixel center intersects with the bounding box or any of the polygons\n(as defined in the Simple Features standard by the OGC).\n\nFor vector data, the process loads the geometry into the data cube if the geometry\nis fully within the bounding box or any of the polygons (as defined in the\nSimple Features standard by the OGC). Empty geometries may only be in the\ndata cube if no spatial extent has been provided.\n\nEmpty geometries are ignored.\n\nSet this parameter to null to set no limit for the spatial extent.",
+      "schema": [
+        {
+          "title": "Bounding Box",
+          "type": "object",
+          "subtype": "bounding-box",
+          "required": [
+            "west",
+            "south",
+            "east",
+            "north"
+          ],
+          "properties": {
+            "west": {
+              "description": "West (lower left corner, coordinate axis 1).",
+              "type": "number"
+            },
+            "south": {
+              "description": "South (lower left corner, coordinate axis 2).",
+              "type": "number"
+            },
+            "east": {
+              "description": "East (upper right corner, coordinate axis 1).",
+              "type": "number"
+            },
+            "north": {
+              "description": "North (upper right corner, coordinate axis 2).",
+              "type": "number"
+            },
+            "base": {
+              "description": "Base (optional, lower left corner, coordinate axis 3).",
+              "type": [
+                "number",
+                "null"
+              ],
+              "default": null
+            },
+            "height": {
+              "description": "Height (optional, upper right corner, coordinate axis 3).",
+              "type": [
+                "number",
+                "null"
+              ],
+              "default": null
+            },
+            "crs": {
+              "description": "Coordinate reference system of the extent, specified as as [EPSG code](http://www.epsg-registry.org/) or [WKT2 CRS string](http://docs.opengeospatial.org/is/18-010r7/18-010r7.html). Defaults to `4326` (EPSG code 4326) unless the client explicitly requests a different coordinate reference system.",
+              "anyOf": [
+                {
+                  "title": "EPSG Code",
+                  "type": "integer",
+                  "subtype": "epsg-code",
+                  "minimum": 1000,
+                  "examples": [
+                    3857
+                  ]
+                },
+                {
+                  "title": "WKT2",
+                  "type": "string",
+                  "subtype": "wkt2-definition"
+                }
+              ],
+              "default": 4326
+            }
+          }
+        },
+        {
+          "title": "Vector data cube",
+          "description": "Limits the data cube to the bounding box of the given geometries in the vector data cube. For raster data, all pixels inside the bounding box that do not intersect with any of the polygons will be set to no data (`null`). Empty geometries are ignored.",
+          "type": "object",
+          "subtype": "datacube",
+          "dimensions": [
+            {
+              "type": "geometry"
+            }
+          ]
+        },
+        {
+          "title": "No filter",
+          "description": "Don't filter spatially. All data is included in the data cube.",
+          "type": "null"
+        }
+      ]
+    }
+  ]
+}
