@@ -1,7 +1,8 @@
 import importlib.resources
+import math
 
 from openeo import DataCube, UDF, MultiResult
-from openeo.processes import ProcessBuilder, array_create, exp, clip
+from openeo.processes import ProcessBuilder, array_create, exp, clip, cos, clip, sin, arccos
 import numpy as np
 
 vp_coeff_nohem = np.array([0.41, 0.42, 0.40, 0.39, 0.38, 0.36, 0.33, 0.33, 0.36, 0.37, 0.40, 0.40]) / 1000.0
@@ -43,7 +44,6 @@ def relative_humidity_formula( temperature_downscaled, dewpoint_temperature_coar
     vp_coeff = vp_coeff_all[month_index]
     d_t_lapse_rate = vp_coeff * c / b
 
-
     D_down = dewpoint_temperature_coarse - d_t_lapse_rate * (elevation - 0) - 273.15
     es = a * exp((b * temperature_downscaled) / (temperature_downscaled + c))
     e = a * exp((b * D_down) / (D_down + c))
@@ -60,12 +60,8 @@ def downscale_temperature_humidity(agera_cube, elevation_cube, geopotential_cube
         .rename_labels(target=["t0","dewpoint-temperature"], dimension="bands")
     downscale_inputs = t0_cube.resample_cube_spatial(elevation_cube,method="bilinear").merge_cubes(elevation_cube.max_time())
 
-    downscaled =  downscale_inputs.reduce_dimension(dimension="bands", reducer=lambda x: downscale_t_dewpoint(x, lapse_rate, temp_index="t0", dem_index="DEM"))
-    return MultiResult([
-        downscaled.save_result("netCDF", dict(filename_prefix="downscaled_"))
-        #t0_cube.save_result("GTIFF", dict(filename_prefix="t0_"))
-        #downscale_inputs.save_result("netCDF", dict(filename_prefix="downscale_inputs_"))
-    ])
+    downscaled =  downscale_inputs.apply_dimension(dimension="bands", process=lambda x: downscale_t_dewpoint(x, lapse_rate, temp_index="t0", dem_index="DEM")).rename_labels(dimension="bands", target=["dewpoint-temperature", "relative-humidity"])
+    return downscaled
 
 
 def get_udf(name):
@@ -80,29 +76,52 @@ def downscale_shortwave_radiation(agera: DataCube, slope_aspect:DataCube):
     requires computation of solar incidence angle
     """
 
-
-
     compute_solarposition = get_udf('solar_position_udf.py')
 
-    agera_with_sunpos = agera.apply_dimension(dimension="bands", process=compute_solarposition)
 
-    return agera_with_sunpos
 
-    compute_incidence = get_udf("incidence_angle_udf.py")
+    agera_with_sunpos = agera.resample_cube_spatial(slope_aspect).apply_dimension(dimension="bands", process=compute_solarposition)\
+        .rename_labels(dimension="bands", target=agera.metadata.band_names + [ "zenith", "azimuth"])
+    agera_sun_terrain = agera_with_sunpos.merge_cubes(slope_aspect)
+    deg2rad = math.pi / 180.0
+    rad2deg = 180.0 / math.pi
 
-    radiation_with_incidence = (agera_with_sunpos.resample_cube_spatial(slope_aspect).merge_cubes(slope_aspect)
-     .apply_dimension(dimension="bands", process=compute_incidence))
+    bands_to_retain = agera_sun_terrain.metadata.band_names
+
+    def compute_incidence(data):
+        zenith_rad = data["zenith"]
+        azimuth_rad = data["azimuth"]
+        slope_rad = data["slope"] * deg2rad
+        aspect_rad = data["aspect"] * deg2rad
+
+        cos_theta = (
+            cos(zenith_rad) * cos(slope_rad) +
+                sin(zenith_rad) * sin(slope_rad) *
+                cos(aspect_rad - azimuth_rad)
+        )
+
+        cos_theta_clipped = clip(cos_theta, -1.0, 1.0)
+        local_angle = arccos(cos_theta_clipped)
+
+        bands = [data[b] for b in bands_to_retain]
+        bands.append(local_angle)
+
+        return array_create( bands )
+
+
+    radiation_with_incidence = (agera_sun_terrain
+                                .apply_dimension(dimension="bands", process=compute_incidence)).rename_labels(dimension="bands", target=bands_to_retain + ["incidence_angle"])
 
     def downscale_shortwave(radiation_incidence: ProcessBuilder) -> ProcessBuilder:
-        ssrd = radiation_incidence["shortwave"]
+        ssrd = radiation_incidence["solar-radiation-flux"]
         incidence = radiation_incidence["incidence_angle"]
         zenith = radiation_incidence["zenith"]
 
 
-        cos_i = np.clip(np.cos(np.radians(incidence)), 0, 1)
-        cosZ = np.cos(zenith)
+        cos_i = clip(cos(incidence), 0, 1)
+        cosZ = cos(zenith)
         # Topographic correction
         Qsi_daily = ssrd * (cos_i / (cosZ + 1e-6))
         return Qsi_daily
 
-    return radiation_with_incidence.apply_dimension(dimension="bands", process=downscale_shortwave)
+    return radiation_with_incidence.apply_dimension(dimension="bands", process=downscale_shortwave).rename_labels(dimension="bands", target=[ "solar-radiation-flux-downscaled"])

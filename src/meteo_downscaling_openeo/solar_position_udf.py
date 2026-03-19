@@ -8,7 +8,17 @@ import pandas as pd
 import datetime
 
 import numpy as np
+from openeo.metadata import CubeMetadata
 from openeo.udf import inspect
+
+def apply_metadata(metadata: CubeMetadata, context: dict) -> CubeMetadata:
+    """Rename the bands by using apply metadata
+    :param metadata: Metadata of the input data
+    :param context: Context of the UDF
+    :return: Renamed labels
+    """
+    # rename band labels
+    return metadata.rename_labels(dimension="bands", target=metadata.band_names + ["zenith", "azimuth"])
 
 
 def apply_datacube(cube: xarray.DataArray, context) -> xarray.DataArray:
