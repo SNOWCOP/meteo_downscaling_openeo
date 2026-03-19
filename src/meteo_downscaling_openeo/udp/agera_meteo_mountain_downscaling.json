@@ -8,16 +8,13 @@
           "dewpoint-temperature",
           "solar-radiation-flux"
         ],
-        "featureflags": {
-          "tilesize": 1
-        },
         "id": "AGERA5",
         "spatial_extent": {
           "from_parameter": "spatial_extent"
         },
         "temporal_extent": [
           "2024-07-01",
-          "2024-07-05"
+          "2024-07-10"
         ]
       }
     },
@@ -27,13 +24,10 @@
         "bands": [
           "geopotential"
         ],
-        "featureflags": {
-          "tilesize": 1
-        },
         "spatial_extent": {
           "from_parameter": "spatial_extent"
         },
-        "url": "https://artifactory.vgt.vito.be/artifactory/auxdata-public/geopotential.json"
+        "url": "https://artifactory.vgt.vito.be/artifactory/auxdata-public/geopotential_bboxfixed.json"
       }
     },
     "reducedimension1": {
@@ -276,14 +270,14 @@
         }
       }
     },
-    "reducedimension3": {
-      "process_id": "reduce_dimension",
+    "applydimension2": {
+      "process_id": "apply_dimension",
       "arguments": {
         "data": {
           "from_node": "mergecubes2"
         },
         "dimension": "bands",
-        "reducer": {
+        "process": {
           "process_graph": {
             "arrayelement4": {
               "process_id": "array_element",
@@ -537,11 +531,98 @@
         }
       }
     },
-    "applydimension2": {
-      "process_id": "apply_dimension",
+    "renamelabels2": {
+      "process_id": "rename_labels",
+      "arguments": {
+        "data": {
+          "from_node": "applydimension2"
+        },
+        "dimension": "bands",
+        "target": [
+          "dewpoint-temperature",
+          "relative-humidity"
+        ]
+      }
+    },
+    "reducedimension3": {
+      "process_id": "reduce_dimension",
+      "arguments": {
+        "data": {
+          "from_node": "loadcollection2"
+        },
+        "dimension": "t",
+        "reducer": {
+          "process_graph": {
+            "max3": {
+              "process_id": "max",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                }
+              },
+              "result": true
+            }
+          }
+        }
+      }
+    },
+    "aspect1": {
+      "process_id": "aspect",
+      "arguments": {
+        "data": {
+          "from_node": "reducedimension3"
+        }
+      }
+    },
+    "slope1": {
+      "process_id": "slope",
+      "arguments": {
+        "data": {
+          "from_node": "reducedimension3"
+        }
+      }
+    },
+    "mergecubes3": {
+      "process_id": "merge_cubes",
+      "arguments": {
+        "cube1": {
+          "from_node": "aspect1"
+        },
+        "cube2": {
+          "from_node": "slope1"
+        }
+      }
+    },
+    "renamelabels3": {
+      "process_id": "rename_labels",
+      "arguments": {
+        "data": {
+          "from_node": "mergecubes3"
+        },
+        "dimension": "bands",
+        "target": [
+          "aspect",
+          "slope"
+        ]
+      }
+    },
+    "resamplecubespatial2": {
+      "process_id": "resample_cube_spatial",
       "arguments": {
         "data": {
           "from_node": "loadcollection1"
+        },
+        "method": "near",
+        "target": {
+          "from_node": "renamelabels3"
+        }
+      }
+    },
+    "applydimension3": {
+      "process_id": "apply_dimension",
+      "arguments": {
+        "data": {
+          "from_node": "resamplecubespatial2"
         },
         "dimension": "bands",
         "process": {
@@ -553,7 +634,7 @@
                   "from_parameter": "data"
                 },
                 "runtime": "Python",
-                "udf": "# /// script\n# dependencies = [\n#   \"pvlib\"\n# ]\n# ///\nimport xarray\nimport pandas as pd\nimport datetime\n\nimport numpy as np\nfrom openeo.udf import inspect\n\n\ndef apply_datacube(cube: xarray.DataArray, context) -> xarray.DataArray:\n    assert len(cube.shape) == 3\n    assert \"t\" in cube.attrs, \"UDF requires 't' attribute with timestamp, as provided by Geotrellis backend.\"\n    assert isinstance(cube.attrs[\"t\"], datetime.datetime ), f\"time has to be provided as datetime, but got: {cube.attrs['t']}\"\n    inspect(data=cube.dims, message = f\"dims {cube.dims}\")\n    new_shape = list(cube.shape)\n    new_shape[cube.dims.index(\"bands\")] = 2\n    new_shape = tuple(new_shape)\n    inspect(data=new_shape, message=f\"shape {new_shape}\")\n\n\n    longitude = cube.coords[\"x\"].mean().item()\n    latitude = cube.coords[\"y\"].mean().item()\n    inspect(data=longitude, message=f\"longitude {longitude}\")\n\n    chunk_timestamp: datetime.datetime = cube.attrs[\"t\"]\n\n    inspect(data=chunk_timestamp, message=f\"date {chunk_timestamp}\")\n\n    print(f\"SOME LOGGING FROM PRINT!!! {cube}\")\n    #import pvlib\n    #location = pvlib.location.Location(latitude, longitude)\n    #inspect(data=location, message=f\"location {location}\")\n    midnight = datetime.datetime.fromordinal(chunk_timestamp.date().toordinal()).replace(tzinfo=datetime.timezone.utc)\n\n    solar_noon_utc = midnight + pd.Timedelta(hours=12)# - location.longitude / 15)\n\n    assert solar_noon_utc.tzinfo is not None, \"The datetime object has no timezone information.\"\n    assert solar_noon_utc.tzinfo == datetime.timezone.utc, \"The datetime object is not in UTC timezone.\"\n\n\n    # Get solar position at estimated solar noon\n    solpos = dict(zenith=45, azimuth=60)#location.get_solarposition(solar_noon_utc)\n\n    # Extract solar angles\n    zenith = 0.4#np.radians(solpos['zenith'].values[0])  # radians\n    azimuth = 0.5 #np.radians(solpos['azimuth'].values[0])  # radians\n\n    full_array = np.full(new_shape, zenith)\n    full_array[1,:,:] = azimuth\n\n    # New data to add\n    new_data = xarray.DataArray(\n        full_array,  # Shape: (1, x, y)\n        dims=[\"bands\", \"x\", \"y\"],\n        coords={\"bands\": [\"zenith\", \"azimuth\"]}\n    )\n\n    # Concatenate along the band dimension\n    return xarray.concat([cube, new_data], dim=\"bands\")\n\n",
+                "udf": "# /// script\n# dependencies = [\n#   \"pvlib\"\n# ]\n# ///\nimport xarray\nimport pandas as pd\nimport datetime\n\nimport numpy as np\nfrom openeo.metadata import CubeMetadata\nfrom openeo.udf import inspect\n\ndef apply_metadata(metadata: CubeMetadata, context: dict) -> CubeMetadata:\n    \"\"\"Rename the bands by using apply metadata\n    :param metadata: Metadata of the input data\n    :param context: Context of the UDF\n    :return: Renamed labels\n    \"\"\"\n    # rename band labels\n    return metadata.rename_labels(dimension=\"bands\", target=metadata.band_names + [\"zenith\", \"azimuth\"])\n\n\ndef apply_datacube(cube: xarray.DataArray, context) -> xarray.DataArray:\n    assert len(cube.shape) == 3\n    assert \"t\" in cube.attrs, \"UDF requires 't' attribute with timestamp, as provided by Geotrellis backend.\"\n    assert isinstance(cube.attrs[\"t\"], datetime.datetime ), f\"time has to be provided as datetime, but got: {cube.attrs['t']}\"\n    inspect(data=cube.dims, message = f\"dims {cube.dims}\")\n    new_shape = list(cube.shape)\n    new_shape[cube.dims.index(\"bands\")] = 2\n    new_shape = tuple(new_shape)\n    inspect(data=new_shape, message=f\"shape {new_shape}\")\n\n\n    longitude = cube.coords[\"x\"].mean().item()\n    latitude = cube.coords[\"y\"].mean().item()\n    inspect(data=longitude, message=f\"longitude {longitude}\")\n\n    chunk_timestamp: datetime.datetime = cube.attrs[\"t\"]\n\n    inspect(data=chunk_timestamp, message=f\"date {chunk_timestamp}\")\n\n    print(f\"SOME LOGGING FROM PRINT!!! {cube}\")\n    #import pvlib\n    #location = pvlib.location.Location(latitude, longitude)\n    #inspect(data=location, message=f\"location {location}\")\n    midnight = datetime.datetime.fromordinal(chunk_timestamp.date().toordinal()).replace(tzinfo=datetime.timezone.utc)\n\n    solar_noon_utc = midnight + pd.Timedelta(hours=12)# - location.longitude / 15)\n\n    assert solar_noon_utc.tzinfo is not None, \"The datetime object has no timezone information.\"\n    assert solar_noon_utc.tzinfo == datetime.timezone.utc, \"The datetime object is not in UTC timezone.\"\n\n\n    # Get solar position at estimated solar noon\n    solpos = dict(zenith=45, azimuth=60)#location.get_solarposition(solar_noon_utc)\n\n    # Extract solar angles\n    zenith = 0.4#np.radians(solpos['zenith'].values[0])  # radians\n    azimuth = 0.5 #np.radians(solpos['azimuth'].values[0])  # radians\n\n    full_array = np.full(new_shape, zenith)\n    full_array[1,:,:] = azimuth\n\n    # New data to add\n    new_data = xarray.DataArray(\n        full_array,  # Shape: (1, x, y)\n        dims=[\"bands\", \"x\", \"y\"],\n        coords={\"bands\": [\"zenith\", \"azimuth\"]}\n    )\n\n    # Concatenate along the band dimension\n    return xarray.concat([cube, new_data], dim=\"bands\")\n\n",
                 "version": "3.11"
               },
               "result": true
@@ -562,14 +643,445 @@
         }
       }
     },
-    "mergecubes3": {
+    "renamelabels4": {
+      "process_id": "rename_labels",
+      "arguments": {
+        "data": {
+          "from_node": "applydimension3"
+        },
+        "dimension": "bands",
+        "target": [
+          "temperature-mean",
+          "dewpoint-temperature",
+          "solar-radiation-flux",
+          "zenith",
+          "azimuth"
+        ]
+      }
+    },
+    "mergecubes4": {
       "process_id": "merge_cubes",
       "arguments": {
         "cube1": {
-          "from_node": "reducedimension3"
+          "from_node": "renamelabels4"
         },
         "cube2": {
-          "from_node": "applydimension2"
+          "from_node": "renamelabels3"
+        }
+      }
+    },
+    "applydimension4": {
+      "process_id": "apply_dimension",
+      "arguments": {
+        "data": {
+          "from_node": "mergecubes4"
+        },
+        "dimension": "bands",
+        "process": {
+          "process_graph": {
+            "arrayelement8": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "temperature-mean"
+              }
+            },
+            "arrayelement9": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "dewpoint-temperature"
+              }
+            },
+            "arrayelement10": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "solar-radiation-flux"
+              }
+            },
+            "arrayelement11": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "zenith"
+              }
+            },
+            "arrayelement12": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "azimuth"
+              }
+            },
+            "arrayelement13": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "aspect"
+              }
+            },
+            "arrayelement14": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "slope"
+              }
+            },
+            "arrayelement15": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "zenith"
+              }
+            },
+            "cos1": {
+              "process_id": "cos",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement15"
+                }
+              }
+            },
+            "arrayelement16": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "slope"
+              }
+            },
+            "multiply12": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement16"
+                },
+                "y": 0.017453292519943295
+              }
+            },
+            "cos2": {
+              "process_id": "cos",
+              "arguments": {
+                "x": {
+                  "from_node": "multiply12"
+                }
+              }
+            },
+            "multiply13": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": {
+                  "from_node": "cos1"
+                },
+                "y": {
+                  "from_node": "cos2"
+                }
+              }
+            },
+            "sin1": {
+              "process_id": "sin",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement15"
+                }
+              }
+            },
+            "sin2": {
+              "process_id": "sin",
+              "arguments": {
+                "x": {
+                  "from_node": "multiply12"
+                }
+              }
+            },
+            "multiply14": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": {
+                  "from_node": "sin1"
+                },
+                "y": {
+                  "from_node": "sin2"
+                }
+              }
+            },
+            "arrayelement17": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "aspect"
+              }
+            },
+            "multiply15": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement17"
+                },
+                "y": 0.017453292519943295
+              }
+            },
+            "arrayelement18": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "azimuth"
+              }
+            },
+            "subtract11": {
+              "process_id": "subtract",
+              "arguments": {
+                "x": {
+                  "from_node": "multiply15"
+                },
+                "y": {
+                  "from_node": "arrayelement18"
+                }
+              }
+            },
+            "cos3": {
+              "process_id": "cos",
+              "arguments": {
+                "x": {
+                  "from_node": "subtract11"
+                }
+              }
+            },
+            "multiply16": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": {
+                  "from_node": "multiply14"
+                },
+                "y": {
+                  "from_node": "cos3"
+                }
+              }
+            },
+            "add3": {
+              "process_id": "add",
+              "arguments": {
+                "x": {
+                  "from_node": "multiply13"
+                },
+                "y": {
+                  "from_node": "multiply16"
+                }
+              }
+            },
+            "clip2": {
+              "process_id": "clip",
+              "arguments": {
+                "max": 1.0,
+                "min": -1.0,
+                "x": {
+                  "from_node": "add3"
+                }
+              }
+            },
+            "arccos1": {
+              "process_id": "arccos",
+              "arguments": {
+                "x": {
+                  "from_node": "clip2"
+                }
+              }
+            },
+            "arraycreate3": {
+              "process_id": "array_create",
+              "arguments": {
+                "data": [
+                  {
+                    "from_node": "arrayelement8"
+                  },
+                  {
+                    "from_node": "arrayelement9"
+                  },
+                  {
+                    "from_node": "arrayelement10"
+                  },
+                  {
+                    "from_node": "arrayelement11"
+                  },
+                  {
+                    "from_node": "arrayelement12"
+                  },
+                  {
+                    "from_node": "arrayelement13"
+                  },
+                  {
+                    "from_node": "arrayelement14"
+                  },
+                  {
+                    "from_node": "arccos1"
+                  }
+                ]
+              },
+              "result": true
+            }
+          }
+        }
+      }
+    },
+    "renamelabels5": {
+      "process_id": "rename_labels",
+      "arguments": {
+        "data": {
+          "from_node": "applydimension4"
+        },
+        "dimension": "bands",
+        "target": [
+          "temperature-mean",
+          "dewpoint-temperature",
+          "solar-radiation-flux",
+          "zenith",
+          "azimuth",
+          "aspect",
+          "slope",
+          "incidence_angle"
+        ]
+      }
+    },
+    "applydimension5": {
+      "process_id": "apply_dimension",
+      "arguments": {
+        "data": {
+          "from_node": "renamelabels5"
+        },
+        "dimension": "bands",
+        "process": {
+          "process_graph": {
+            "arrayelement19": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "solar-radiation-flux"
+              }
+            },
+            "arrayelement20": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "incidence_angle"
+              }
+            },
+            "cos4": {
+              "process_id": "cos",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement20"
+                }
+              }
+            },
+            "clip3": {
+              "process_id": "clip",
+              "arguments": {
+                "max": 1,
+                "min": 0,
+                "x": {
+                  "from_node": "cos4"
+                }
+              }
+            },
+            "arrayelement21": {
+              "process_id": "array_element",
+              "arguments": {
+                "data": {
+                  "from_parameter": "data"
+                },
+                "label": "zenith"
+              }
+            },
+            "cos5": {
+              "process_id": "cos",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement21"
+                }
+              }
+            },
+            "add4": {
+              "process_id": "add",
+              "arguments": {
+                "x": {
+                  "from_node": "cos5"
+                },
+                "y": 1e-06
+              }
+            },
+            "divide5": {
+              "process_id": "divide",
+              "arguments": {
+                "x": {
+                  "from_node": "clip3"
+                },
+                "y": {
+                  "from_node": "add4"
+                }
+              }
+            },
+            "multiply17": {
+              "process_id": "multiply",
+              "arguments": {
+                "x": {
+                  "from_node": "arrayelement19"
+                },
+                "y": {
+                  "from_node": "divide5"
+                }
+              },
+              "result": true
+            }
+          }
+        }
+      }
+    },
+    "renamelabels6": {
+      "process_id": "rename_labels",
+      "arguments": {
+        "data": {
+          "from_node": "applydimension5"
+        },
+        "dimension": "bands",
+        "target": [
+          "solar-radiation-flux-downscaled"
+        ]
+      }
+    },
+    "mergecubes5": {
+      "process_id": "merge_cubes",
+      "arguments": {
+        "cube1": {
+          "from_node": "renamelabels2"
+        },
+        "cube2": {
+          "from_node": "renamelabels6"
         }
       },
       "result": true
