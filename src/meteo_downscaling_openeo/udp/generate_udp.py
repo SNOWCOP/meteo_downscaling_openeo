@@ -25,7 +25,7 @@ if __name__ == '__main__':
                              description="Computes meteo variables (temperature, humidity, shortwave radiation) downscaled to mountain areas based on AGERA5 and DEM data. A simply physical model is used. Ported from original: [https://github.com/bare92/micropyzzotmet/](micropyzzotmet)",
                              links=[{"rel": "about", "href": "https://github.com/bare92/micropyzzotmet/](micropyzzotmet"}],
                              categories=["meteo"],
-                             parameters=[spatial_extent], returns=returns,
+                             parameters=[spatial_extent, temporal_extent], returns=returns,
                              default_job_options={"executor-memory": "10G"})
 
     with open(Path(__file__).parent / "agera_meteo_mountain_downscaling.json", "w+") as f:
