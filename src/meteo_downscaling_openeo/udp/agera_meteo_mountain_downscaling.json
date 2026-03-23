@@ -12,10 +12,9 @@
         "spatial_extent": {
           "from_parameter": "spatial_extent"
         },
-        "temporal_extent": [
-          "2024-07-01",
-          "2024-07-10"
-        ]
+        "temporal_extent": {
+          "from_parameter": "temporal_extent"
+        }
       }
     },
     "loadstac1": {
@@ -1106,6 +1105,9 @@
       "href": "https://github.com/bare92/micropyzzotmet/](micropyzzotmet"
     }
   ],
+  "default_job_options": {
+    "executor-memory": "10G"
+  },
   "parameters": [
     {
       "name": "spatial_extent",
